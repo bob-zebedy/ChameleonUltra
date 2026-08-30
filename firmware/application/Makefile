@@ -424,7 +424,10 @@ CFLAGS += -ffunction-sections -fdata-sections -fno-strict-aliasing
 CFLAGS += -fno-builtin -fshort-enums
 
 # Versioning flags
-CFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
+# Single-quote the complete definition for the shell so the human-readable
+# version can safely contain spaces and parentheses. The inner double quotes
+# remain part of the C preprocessor string literal.
+CFLAGS += -DGIT_VERSION='"$(GIT_VERSION)"'
 ifndef APP_FW_VER_MAJOR
 $(error APP_FW_VER_MAJOR is not defined, please define it)
 endif

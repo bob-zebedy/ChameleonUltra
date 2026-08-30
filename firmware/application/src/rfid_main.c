@@ -108,7 +108,7 @@ device_mode_t get_device_mode(void) {
  * @brief Get the color by slot
  *
  * @param slot slot number, 0 - 7
- * @return uint8_t Color 0R, 1G, 2B
+ * @return uint8_t Dual-frequency blue, HF cyan, LF white, or magenta as fallback
  */
 uint8_t get_color_by_slot(uint8_t slot) {
     tag_slot_specific_type_t tag_types;
@@ -116,10 +116,12 @@ uint8_t get_color_by_slot(uint8_t slot) {
     bool enabled_lf = is_slot_enabled(slot, TAG_SENSE_LF);
     bool enabled_hf = is_slot_enabled(slot, TAG_SENSE_HF);
     if (tag_types.tag_hf != TAG_TYPE_UNDEFINED && tag_types.tag_lf != TAG_TYPE_UNDEFINED && enabled_hf && enabled_lf) {
-        return 0;   // Dual -frequency card emulation, return R, indicate a dual -frequency card
-    } else if (tag_types.tag_hf != TAG_TYPE_UNDEFINED && enabled_hf) {   //High -frequency emulation, return G
-        return 1;
-    } else {    // Low -frequency emulation, return B
-        return 2;
+        return RGB_BLUE;
+    } else if (tag_types.tag_hf != TAG_TYPE_UNDEFINED && enabled_hf) {
+        return RGB_CYAN;
+    } else if (tag_types.tag_lf != TAG_TYPE_UNDEFINED && enabled_lf) {
+        return RGB_WHITE;
+    } else {
+        return RGB_MAGENTA;
     }
 }

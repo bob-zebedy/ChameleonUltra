@@ -1,0 +1,15 @@
+[project]
+name = "chameleon-firmware-artifacts"
+version = "0.1.0"
+description = "Native Nordic Secure DFU artifact generation for ChameleonUltra firmware"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "nrfutil==6.1.7",
+]
+
+[tool.uv]
+# The DFU package/settings APIs do not use the BLE transport. Excluding its
+# x86-only wheel is what makes this project runnable natively on Apple Silicon.
+override-dependencies = [
+    "pc-ble-driver-py ; sys_platform == 'never'",
+]

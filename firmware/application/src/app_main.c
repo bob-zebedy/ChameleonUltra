@@ -314,9 +314,9 @@ static void system_off_enter(void) {
         uint8_t color = get_color_by_slot(slot);
         if (m_reset_source & (NRF_POWER_RESETREAS_NFC_MASK | NRF_POWER_RESETREAS_LPCOMP_MASK)) {
             if (m_reset_source & NRF_POWER_RESETREAS_NFC_MASK) {
-                color = 1;
+                color = RGB_CYAN;
             } else {
-                color = 2;
+                color = RGB_WHITE;
             }
         }
         if (animation_config == SettingsAnimationModeFull) {
@@ -492,10 +492,10 @@ static void check_wakeup_src(void) {
 
         // wake up from hf field.
         if (m_reset_source & NRF_POWER_RESETREAS_NFC_MASK) {
-            color = 1;  // HF field show G.
+            color = RGB_CYAN;
             NRF_LOG_INFO("WakeUp from HF");
         } else {
-            color = 2;  // LF filed show B.
+            color = RGB_WHITE;
             if (m_gpregret_val & RESET_ON_LF_FIELD_EXISTS_Msk) {
                 NRF_LOG_INFO("Reset by LF");
             } else {
@@ -610,11 +610,23 @@ static void show_battery(void) {
         }
         bsp_delay_ms(100);
     }
-    // ok we have data, show level with cyan LEDs
+    // Show the battery level using a color that reflects the remaining charge.
     for (int i = 0; i < RGB_LIST_NUM; i++) {
         nrf_gpio_pin_clear(led_pins[i]);
     }
-    set_slot_light_color(RGB_CYAN);
+    chameleon_rgb_type_t color;
+    if (percentage_batt_lvl > 80) {
+        color = RGB_GREEN;
+    } else if (percentage_batt_lvl > 60) {
+        color = RGB_BLUE;
+    } else if (percentage_batt_lvl > 40) {
+        color = RGB_YELLOW;
+    } else if (percentage_batt_lvl > 20) {
+        color = RGB_MAGENTA;
+    } else {
+        color = RGB_RED;
+    }
+    set_slot_light_color(color);
     uint8_t nleds = (percentage_batt_lvl * 2) / 25; // 0->7 (8 for 100% but this is ignored)
     for (int i = 0; i < RGB_LIST_NUM; i++) {
         if (i <= nleds) {

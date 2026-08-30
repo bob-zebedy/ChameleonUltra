@@ -1,0 +1,11 @@
+[project]
+name = "Chameleon_Ultra_CLI"
+version = "0.1.0"
+description = "ChameleonUltra CLI"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "colorama==0.4.6",
+    "prompt-toolkit==3.0.39",
+    "pyserial==3.5",
+]

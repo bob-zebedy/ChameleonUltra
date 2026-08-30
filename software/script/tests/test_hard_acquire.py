@@ -1,12 +1,21 @@
-#!/usr/bin/env python3
-import hardnested_utils
-from chameleon_cmd import ChameleonCMD
-from chameleon_com import ChameleonCom, OpenFailException
+import os
 import sys
-sys.path.append('..')
+import unittest
+from pathlib import Path
+
+SCRIPT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPT_ROOT))
+
+import hardnested_utils  # noqa: E402
+from chameleon_cmd import ChameleonCMD  # noqa: E402
+from chameleon_com import ChameleonCom  # noqa: E402
+
+TEST_PORT = os.environ.get("CHAMELEON_TEST_PORT")
 
 
 def test_hardnested_acquire():
+    if not TEST_PORT:
+        raise unittest.SkipTest("set CHAMELEON_TEST_PORT to run hardware tests")
     nonces_buffer = bytearray()
     acquire_count = 0
 
@@ -24,10 +33,7 @@ def test_hardnested_acquire():
     #   (4byte uid of card) - (block_target 1byte) - (type_target 1byte) - (nonces from device Nbytes)
 
     # ------------------------     open the device     ------------------------
-    try:
-        cml = ChameleonCom().open('com19')
-    except OpenFailException:
-        cml = ChameleonCom().open('/dev/ttyACM0')
+    cml = ChameleonCom().open(TEST_PORT)
     cml_cmd = ChameleonCMD(cml)
 
     # ------------------------ SET DEVICE MODE ------------------------
@@ -42,14 +48,14 @@ def test_hardnested_acquire():
         return
 
     tag_info = resp[0]
-    uidbytes = tag_info['uid']
+    uidbytes = tag_info["uid"]
     uid_len = len(uidbytes)
     if uid_len == 4:
-        nonces_buffer.extend(uidbytes[0: 4])
+        nonces_buffer.extend(uidbytes[0:4])
     if uid_len == 7:
-        nonces_buffer.extend(uidbytes[3: 7])
+        nonces_buffer.extend(uidbytes[3:7])
     if uid_len == 10:
-        nonces_buffer.extend(uidbytes[6: 10])
+        nonces_buffer.extend(uidbytes[6:10])
 
     nonces_buffer.extend([block_target, type_target & 0x01])
 
@@ -58,19 +64,27 @@ def test_hardnested_acquire():
     while True:
         # 1, acquire from device
         # slow = 0 to fast acquire...
-        acquire_datas = cml_cmd.mf1_hard_nested_acquire(0, block_known, type_known, key, block_target, type_target)
+        acquire_datas = cml_cmd.mf1_hard_nested_acquire(
+            0, block_known, type_known, key, block_target, type_target
+        )
         if acquire_datas is not None:
             acquire_count += 1
             print(f"Acquire success, count: {acquire_count}")
         else:
-            raise Exception("acquire failed")
+            raise RuntimeError("acquire failed")
         # 2. check data
         data_check_index = 0
         while data_check_index < len(acquire_datas):
             # Memory Layout: nt_enc1(4byte) - nt_enc2(4byte) - par(1byte)...
             # To integer
-            nt_enc1 = int.from_bytes(acquire_datas[data_check_index + 0:  data_check_index + 0 + 4], byteorder='big')
-            nt_enc2 = int.from_bytes(acquire_datas[data_check_index + 4:  data_check_index + 4 + 4], byteorder='big')
+            nt_enc1 = int.from_bytes(
+                acquire_datas[data_check_index + 0 : data_check_index + 0 + 4],
+                byteorder="big",
+            )
+            nt_enc2 = int.from_bytes(
+                acquire_datas[data_check_index + 4 : data_check_index + 4 + 4],
+                byteorder="big",
+            )
             par_enc = acquire_datas[data_check_index + 8]
             # check unique and sum
             hardnested_utils.check_nonce_unique_sum(nt_enc1, par_enc >> 4)
@@ -82,15 +96,21 @@ def test_hardnested_acquire():
         if hardnested_utils.hardnested_first_byte_num == 256:
             got_match = False
             for i in range(len(hardnested_utils.hardnested_sums)):
-                if hardnested_utils.hardnested_first_byte_sum == hardnested_utils.hardnested_sums[i]:
+                if (
+                    hardnested_utils.hardnested_first_byte_sum
+                    == hardnested_utils.hardnested_sums[i]
+                ):
                     got_match = True  # Sum matches successfully, and we can try to decrypt it next.
                     break
             if got_match:
-                print(f"Acquire finish, save to file [nonces.bin], size is {len(nonces_buffer)}bytes")
+                print(
+                    f"Acquire finish, save to file [nonces.bin], size is {len(nonces_buffer)}bytes"
+                )
                 break
             else:
                 print(
-                    f"hardnested_first_byte_num exceeds the limit but got_match is false: {hardnested_utils.hardnested_first_byte_sum}")
+                    f"hardnested_first_byte_num exceeds the limit but got_match is false: {hardnested_utils.hardnested_first_byte_sum}"
+                )
         else:
             continue  # Continue acquire
 
@@ -105,5 +125,7 @@ def test_hardnested_acquire():
 if __name__ == "__main__":
     try:
         test_hardnested_acquire()
+    except unittest.SkipTest as e:
+        print(f"Skipped: {e}")
     except Exception as e:
         print(f"An error occurred: {e}")

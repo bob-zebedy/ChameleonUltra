@@ -1,80 +1,71 @@
 import os
 import sys
-import threading
-import time
-
-# From https://stackoverflow.com/a/29834357
+import tempfile
+from contextlib import ExitStack
 
 
-class OutputGrabber(object):
-    """
-    Class used to grab standard output or another stream.
-    """
-    escape_char = "\b"
+class OutputGrabber:
+    """Capture a file-backed text stream without pipe-buffer deadlocks."""
 
     def __init__(self, stream=None, threaded=False):
-        self.origstream = stream
+        # ``threaded`` is kept for compatibility with the previous helper.
         self.threaded = threaded
-        if self.origstream is None:
-            self.origstream = sys.stdout
+        self.origstream = sys.stdout if stream is None else stream
         self.origstreamfd = self.origstream.fileno()
         self.captured_text = ""
-        # Create a pipe so the stream can be captured:
-        self.pipe_out, self.pipe_in = os.pipe()
+        self._saved_fd = None
+        self._capture_file = None
+        self._resources = None
 
     def __enter__(self):
         self.start()
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, exc_type, exc_value, traceback):
         self.stop()
+        return False
 
     def start(self):
         """
         Start capturing the stream data.
         """
+        if self._capture_file is not None:
+            raise RuntimeError("Output capture is already active")
+
+        self.origstream.flush()
         self.captured_text = ""
-        # Save a copy of the stream:
-        self.streamfd = os.dup(self.origstreamfd)
-        # Replace the original stream with our write pipe:
-        os.dup2(self.pipe_in, self.origstreamfd)
-        if self.threaded:
-            # Start thread that will read the stream:
-            self.workerThread = threading.Thread(target=self.readOutput)
-            self.workerThread.start()
-            # Make sure that the thread is running and os.read() has executed:
-            time.sleep(0.01)
+        self._saved_fd = os.dup(self.origstreamfd)
+        self._resources = ExitStack()
+        try:
+            self._capture_file = self._resources.enter_context(
+                tempfile.TemporaryFile(mode="w+b")
+            )
+            os.dup2(self._capture_file.fileno(), self.origstreamfd)
+        except OSError:
+            os.close(self._saved_fd)
+            self._saved_fd = None
+            self._capture_file = None
+            self._resources.close()
+            self._resources = None
+            raise
 
     def stop(self):
         """
         Stop capturing the stream data and save the text in `captured_text`.
         """
-        # Print the escape character to make the readOutput method stop:
-        self.origstream.write(self.escape_char)
-        # Flush the stream to make sure all our data goes in before
-        # the escape character:
-        self.origstream.flush()
-        if self.threaded:
-            # wait until the thread finishes so we are sure that
-            # we have until the last character:
-            self.workerThread.join()
-        else:
-            self.readOutput()
-        # Close the pipe:
-        os.close(self.pipe_in)
-        os.close(self.pipe_out)
-        # Restore the original stream:
-        os.dup2(self.streamfd, self.origstreamfd)
-        # Close the duplicate stream:
-        os.close(self.streamfd)
+        if self._capture_file is None or self._saved_fd is None:
+            return
 
-    def readOutput(self):
-        """
-        Read the stream data (one byte at a time)
-        and save the text in `captured_text`.
-        """
-        while True:
-            char = os.read(self.pipe_out, 1).decode(self.origstream.encoding)
-            if not char or self.escape_char in char:
-                break
-            self.captured_text += char
+        self.origstream.flush()
+        os.dup2(self._saved_fd, self.origstreamfd)
+        os.close(self._saved_fd)
+        self._saved_fd = None
+
+        self._capture_file.seek(0)
+        encoding = self.origstream.encoding or "utf-8"
+        self.captured_text = self._capture_file.read().decode(
+            encoding, errors="replace"
+        )
+        self._capture_file = None
+        self._resources.close()
+        self._resources = None

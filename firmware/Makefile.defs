@@ -6,9 +6,9 @@
 #    You can ignore this file modify.
 # Warning: your toolchain path not allow PR to public repo!!!
 # If you need define the toolchain path, plz delete annotate and change it.
-#GNU_INSTALL_ROOT ?= /your/toolchain/path/
-#GNU_VERSION ?= 8.8.8
-#GNU_PREFIX ?= arm-none-eabi
+GNU_INSTALL_ROOT ?= $(HOME)/.local/toolchains/arm-none-eabi-gcc/bin/
+GNU_VERSION ?= 12.2.1
+GNU_PREFIX ?= arm-none-eabi
 
 
 PROJECT_NAME     := chameleon_ultra_firmware
@@ -26,8 +26,48 @@ CHAMELEON_LITE  := lite
 CURRENT_DEVICE_TYPE ?= ${CHAMELEON_ULTRA}
 
 # Versioning information
-GIT_VERSION := $(shell git describe --abbrev=7 --dirty --always --tags --match "v*.*")
-APP_FW_SEMVER := $(subst v,,$(shell git describe --tags --abbrev=0 --match "v*.*"))
+#
+# Firmware-reported version:
+#   v<upstream-version>(bob v<bob-version>) build <short-hash>[ dirty]
+# Bob release tag:
+#   bob-v<bob-version>
+#
+# <upstream-version> is detected from the nearest reachable upstream tag.
+# BOB_VERSION is the single source of truth for <bob-version>. Increment it
+# before publishing a new Bob release. Override it through the environment or
+# with `make BOB_VERSION=x.y.z`.
+#
+# The build checks an existing matching Bob tag for conflicts; it does not
+# create Git tags.
+BOB_VERSION ?= 1.0.0
+BOB_VERSION_IS_VALID := $(shell printf '%s\n' '$(BOB_VERSION)' | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$' && printf yes)
+ifeq ($(BOB_VERSION_IS_VALID),)
+$(error BOB_VERSION must be a three-part version such as 1.0.0, got '$(BOB_VERSION)')
+endif
+
+# Exclude historical custom tags when finding the nearest upstream release.
+# Current bob-v* tags do not match v[0-9]* and therefore need no exclusion.
+UPSTREAM_VERSION_TAG ?= $(shell git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude 'v*+bob*' --exclude 'v*(bob-v*)' 2>/dev/null)
+ifeq ($(strip $(UPSTREAM_VERSION_TAG)),)
+$(error No upstream version tag found; expected a tag such as v2.2.0)
+endif
+
+UPSTREAM_VERSION := $(patsubst v%,%,$(UPSTREAM_VERSION_TAG))
+BOB_TAG := bob-v$(BOB_VERSION)
+BOB_TAG_EXISTS := $(shell git rev-parse --verify --quiet 'refs/tags/$(BOB_TAG)^{commit}' >/dev/null && printf yes)
+BOB_TAG_IS_ANCESTOR := $(shell git merge-base --is-ancestor '$(BOB_TAG)' HEAD 2>/dev/null && printf yes)
+ifneq ($(BOB_TAG_EXISTS),)
+ifeq ($(BOB_TAG_IS_ANCESTOR),)
+$(error Bob release tag $(BOB_TAG) exists but is not an ancestor of HEAD; increment BOB_VERSION)
+endif
+endif
+
+GIT_SHORT_HASH := $(shell git rev-parse --short=7 HEAD 2>/dev/null)
+# Match git describe --dirty semantics: ignore untracked files.
+GIT_DIRTY_SUFFIX := $(shell git diff --quiet HEAD -- 2>/dev/null || printf ' dirty')
+GIT_VERSION := v$(UPSTREAM_VERSION)(bob v$(BOB_VERSION)) build $(GIT_SHORT_HASH)$(GIT_DIRTY_SUFFIX)
+
+APP_FW_SEMVER := $(UPSTREAM_VERSION)
 APP_FW_VER_MAJOR := $(word 1,$(subst ., ,$(APP_FW_SEMVER)))
 APP_FW_VER_MINOR := $(word 2,$(subst ., ,$(APP_FW_SEMVER)))
 
